@@ -98,6 +98,15 @@ class TestDetect(unittest.TestCase):
             "buy_dollar_volume_5d": rng.normal(10000, 2000, n).clip(0),
             "buy_sell_ratio_5d": rng.uniform(0.3, 0.7, n),
             "dollar_volume_zscore": rng.normal(0, 1, n),
+            # Phase 2 additions — isolation_forest_detect() now trains on
+            # every column in features.NUMERIC_FEATURE_COLUMNS, so a
+            # hand-built feature table needs all of them, not just the
+            # original four.
+            "n_purchases_5d": rng.poisson(1, n),
+            "purchases_per_buyer_5d": rng.uniform(0.5, 1.5, n),
+            "insider_relative_size_zscore_5d": rng.normal(0, 1, n),
+            "role_weighted_buy_value_5d": rng.normal(10000, 2000, n).clip(0),
+            "pre_signal_return_10d": rng.normal(0, 0.05, n),
         })
         result = isolation_forest_detect(normal, contamination=0.05)
         flagged_fraction = result.is_anomaly.mean()

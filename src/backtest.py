@@ -23,6 +23,8 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
+from src.config import DEFAULT_CONFIG
+
 
 def forward_return(prices: pd.DataFrame, ticker: str, date, horizon_days: int) -> float | None:
     series = prices[prices.ticker == ticker].sort_values("date").reset_index(drop=True)
@@ -47,13 +49,13 @@ def _collect_returns(rows: pd.DataFrame, prices: pd.DataFrame, horizon_days: int
     return [r for r in returns if r is not None]
 
 
-def backtest(detections: pd.DataFrame, prices: pd.DataFrame, horizon_days: int = 10, seed: int = 42):
+def backtest(detections: pd.DataFrame, prices: pd.DataFrame,
+             horizon_days: int = DEFAULT_CONFIG.forward_return_horizon_days, seed: int = 42):
     """
     Returns a dict with flagged/control forward-return stats and a t-test
     result, plus the per-row forward returns for flagged days (useful for
     plotting).
     """
-    rng = np.random.default_rng(seed)
     flagged = detections[detections.is_anomaly]
     flagged_returns = _collect_returns(flagged, prices, horizon_days)
 

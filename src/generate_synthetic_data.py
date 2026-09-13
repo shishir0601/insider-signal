@@ -73,6 +73,35 @@ def generate(
     transactions = []
     insider_ids = {t: [f"{t}-INS{i}" for i in range(n_insiders_per_ticker)] for t in tickers}
 
+    # ---- insider roles (Phase 2: needed for role-weighted features) ----
+    # Deliberately drawn from a SEPARATE RNG stream, not `rng` above: this
+    # was added after the price/cluster/transaction generation logic
+    # already existed and was pinned by a regression test
+    # (test_default_seed_output_unchanged_by_bounds_fix) — inserting new
+    # draws into the middle of the existing `rng` sequence would shift
+    # every draw after it and silently change which tickers get injected
+    # clusters, the price paths, and every transaction for a given seed.
+    # An independent stream means role assignment is still fully
+    # deterministic (same seed -> same roles) without perturbing any
+    # existing output.
+    role_rng = np.random.default_rng(seed + 1_000_003)
+    role_fill_template = ["Director", "VP", "Officer", "10% Owner"]
+    insider_roles = {}
+    for t in tickers:
+        ids = insider_ids[t]
+        pool = []
+        if len(ids) >= 1:
+            pool.append("CEO")
+        if len(ids) >= 2:
+            pool.append("CFO")
+        i = 0
+        while len(pool) < len(ids):
+            pool.append(role_fill_template[i % len(role_fill_template)])
+            i += 1
+        role_rng.shuffle(pool)
+        for insider_id, role in zip(ids, pool):
+            insider_roles[insider_id] = role
+
     for t in tickers:
         # ---- baseline noise trading: sparse, uncorrelated ----
         for insider in insider_ids[t]:
@@ -86,6 +115,7 @@ def generate(
                     "ticker": t, "insider_id": insider, "date": d,
                     "transaction_type": ttype, "shares": shares,
                     "price": round(price_on_day, 2),
+                    "insider_title": insider_roles[insider],
                 })
 
         if t in informed_tickers:
@@ -105,6 +135,7 @@ def generate(
                     "ticker": t, "insider_id": insider, "date": d,
                     "transaction_type": "BUY", "shares": shares,
                     "price": round(price_on_day, 2),
+                    "insider_title": insider_roles[insider],
                 })
 
             # bake in the forward price jump so the backtest has something real to find
