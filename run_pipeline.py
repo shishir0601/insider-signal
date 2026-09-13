@@ -1,9 +1,18 @@
 """
 run_pipeline.py
 
-End-to-end run: generate data -> engineer features -> detect anomalies
-(both the statistical baseline and Isolation Forest) -> backtest against
-forward returns -> save charts and a summary report to outputs/.
+Fast, single-run, whole-dataset report: generate data -> clean ->
+engineer features -> detect anomalies (both the statistical baseline
+and Isolation Forest) -> backtest against forward returns -> save
+charts and a summary report to outputs/.
+
+This is the quick/illustrative script — it answers "does the pipeline
+recover a known injected signal at all," fast enough to run on every
+change. Its Isolation Forest result has look-ahead leakage by design
+(see the report's own "Honest caveats" section and
+src/detect.py:isolation_forest_detect). For a leakage-safe,
+chronologically out-of-sample-evaluated backtest, use
+`python3 run_backtest.py` instead.
 
 Run: python3 run_pipeline.py
 """
@@ -14,9 +23,10 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from src.generate_synthetic_data import generate
+from src.cleaning import clean_transactions
 from src.features import build_features
 from src.detect import statistical_baseline, isolation_forest_detect
-from src.backtest import backtest, forward_return
+from src.backtest import backtest
 
 OUT_DIR = os.path.join(os.path.dirname(__file__), "outputs")
 
@@ -25,24 +35,28 @@ def main():
     os.makedirs(OUT_DIR, exist_ok=True)
     os.makedirs("data", exist_ok=True)
 
-    print("1/5  Generating data (synthetic — see README for why)...")
+    print("1/6  Generating data (synthetic — see README for why)...")
     tx, prices, ground_truth = generate()
+
+    print("2/6  Cleaning/validating transactions...")
+    tx, cleaning_report = clean_transactions(tx)
+    print(f"     {cleaning_report.summary()}")
     tx.to_csv("data/transactions.csv", index=False)
     prices.to_csv("data/prices.csv", index=False)
     ground_truth.to_csv("data/ground_truth.csv", index=False)
 
-    print("2/5  Engineering features...")
-    features = build_features(tx)
+    print("3/6  Engineering features...")
+    features = build_features(tx, prices=prices)
 
-    print("3/5  Running detectors...")
+    print("4/6  Running detectors...")
     baseline = statistical_baseline(features)
     iso = isolation_forest_detect(features)
 
-    print("4/5  Backtesting against forward returns...")
+    print("5/6  Backtesting against forward returns...")
     baseline_result = backtest(baseline, prices, horizon_days=10)
     iso_result = backtest(iso, prices, horizon_days=10)
 
-    print("5/5  Writing report and charts...")
+    print("6/6  Writing report and charts...")
     write_report(baseline, iso, baseline_result, iso_result, ground_truth)
     plot_returns(baseline_result, iso_result)
     plot_example_cluster(tx, prices, ground_truth, baseline)
@@ -74,6 +88,12 @@ def write_report(baseline, iso, baseline_result, iso_result, ground_truth):
                   "validation and are not implied by this report.")
     lines.append("- No transaction costs, slippage, or multiple-comparison correction across tickers/days.")
     lines.append("- Contamination rate for Isolation Forest was chosen manually, not cross-validated.")
+    lines.append("- **The Isolation Forest result above has look-ahead leakage by design**: it fits one "
+                  "model on the entire dataset at once, so a day early in the run is scored by a model "
+                  "that has already seen every later day too. That's fine for this quick illustrative "
+                  "report, but not for judging whether the detector would work in real time — use "
+                  "`python3 run_backtest.py` for the leakage-safe, out-of-sample-evaluated version "
+                  "(see `src/detect.py:isolation_forest_detect_walkforward`).")
 
     with open(os.path.join(OUT_DIR, "report.md"), "w") as f:
         f.write("\n".join(lines))
